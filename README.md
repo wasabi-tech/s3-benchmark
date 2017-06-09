@@ -55,7 +55,7 @@ Loop 1: DELETE time 1.9 secs, 2923.4 deletes/sec.
 Benchmark completed.
 ```
 
-#Note
+# Note
 Your benchmark results may vary most often because of limitations of your network connection to the cloud storage
 provider.  Wasabi performance claims are tested under conditions that remove any latency (which can be shown using 
 the ping command) and bandwidth bottlenecks that restrict how fast data can be moved.  For more information,

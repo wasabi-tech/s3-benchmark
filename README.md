@@ -4,11 +4,11 @@ s3-benchmark is a performance testing tool provided by Wasabi for performing S3 
 The testing tool is loosely based on the Nasuni (http://www6.nasuni.com/rs/nasuni/images/Nasuni-2015-State-of-Cloud-Storage-Report.pdf) performance benchmarking methodologies used to test the performance of different cloud storage providers
 
 # Prerequisites
-To leverage this tool, the following prerequisites apply
-•	Git development environment
-•	Ubuntu Linux shell programming skills
-•	Access to a Go 1.7 development system (only if the OS is not Ubuntu Linux 16.04)
-•	Access to the appropriate AWS EC2 (or equivalent) compute resource (optimal performance is realized using m4.10xlarge EC2 Ubuntu with 10 GB ENA)
+To leverage this tool, the following prerequisites apply:
+*	Git development environment
+*	Ubuntu Linux shell programming skills
+*	Access to a Go 1.7 development system (only if the OS is not Ubuntu Linux 16.04)
+*	Access to the appropriate AWS EC2 (or equivalent) compute resource (optimal performance is realized using m4.10xlarge EC2 Ubuntu with 10 GB ENA)
 
 
 # Building the Program

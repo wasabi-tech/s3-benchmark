@@ -94,13 +94,17 @@ func getS3Client() *s3.S3 {
 	return client
 }
 
-func createBucket() {
+func createBucket(ignore_errors bool) {
 	// Get a client
 	client := getS3Client()
 	// Create our bucket (may already exist without error)
 	in := &s3.CreateBucketInput{Bucket: aws.String(bucket)}
 	if _, err := client.CreateBucket(in); err != nil {
-		log.Fatalf("FATAL: Unable to create bucket %s (is your access and secret correct?): %v", bucket, err)
+			if ignore_errors {
+				log.Printf("WARNING: createBucket %s error, ignoring %v", bucket, err)
+			} else {
+				log.Fatalf("FATAL: Unable to create bucket %s (is your access and secret correct?): %v", bucket, err)
+			}
 	}
 }
 
@@ -307,12 +311,16 @@ func main() {
 	object_data_md5 = base64.StdEncoding.EncodeToString(hasher.Sum(nil))
 
 	// Create the bucket and delete all the objects
-	createBucket()
+	createBucket(true)
 	deleteAllObjects()
 
 	// Loop running the tests
 	for loop := 1; loop <= loops; loop++ {
 
+		// reset counters
+		upload_count = 0
+		download_count = 0
+		delete_count = 0
 		// Run the upload case
 		running_threads = int32(threads)
 		starttime := time.Now()

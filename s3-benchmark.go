@@ -33,7 +33,7 @@ import (
 )
 
 // Global variables
-var access_key, secret_key, url_host, bucket string
+var access_key, secret_key, url_host, bucket, region string
 var duration_secs, threads, loops int
 var object_size uint64
 var object_data []byte
@@ -76,7 +76,7 @@ func getS3Client() *s3.S3 {
 	loglevel := aws.LogOff
 	// Build the rest of the configuration
 	awsConfig := &aws.Config{
-		Region:               aws.String("us-east-1"),
+		Region:               aws.String(region),
 		Endpoint:             aws.String(url_host),
 		Credentials:          creds,
 		LogLevel:             &loglevel,
@@ -98,7 +98,10 @@ func createBucket() {
 	// Get a client
 	client := getS3Client()
 	// Create our bucket (may already exist without error)
-	in := &s3.CreateBucketInput{Bucket: aws.String(bucket)}
+	in := &s3.CreateBucketInput{
+		Bucket: aws.String(bucket),
+		CreateBucketConfiguration: &s3.CreateBucketConfiguration{LocationConstraint: aws.String(region),},
+	}
 	if _, err := client.CreateBucket(in); err != nil {
 		log.Fatalf("FATAL: Unable to create bucket %s (is your access and secret correct?): %v", bucket, err)
 	}
@@ -274,6 +277,7 @@ func main() {
 	myflag.StringVar(&secret_key, "s", "", "Secret key")
 	myflag.StringVar(&url_host, "u", "http://s3.wasabisys.com", "URL for host with method prefix")
 	myflag.StringVar(&bucket, "b", "wasabi-benchmark-bucket", "Bucket for testing")
+	myflag.StringVar(&region, "r", "us-east-1", "AWS region")
 	myflag.IntVar(&duration_secs, "d", 60, "Duration of each test in seconds")
 	myflag.IntVar(&threads, "t", 1, "Number of threads to run")
 	myflag.IntVar(&loops, "l", 1, "Number of times to repeat test")
@@ -296,8 +300,8 @@ func main() {
 	}
 
 	// Echo the parameters
-	logit(fmt.Sprintf("Parameters: url=%s, bucket=%s, duration=%d, threads=%d, loops=%d, size=%s",
-		url_host, bucket, duration_secs, threads, loops, sizeArg))
+	logit(fmt.Sprintf("Parameters: url=%s, bucket=%s, region=%s, duration=%d, threads=%d, loops=%d, size=%s",
+		url_host, bucket, region, duration_secs, threads, loops, sizeArg))
 
 	// Initialize data for the bucket
 	object_data = make([]byte, object_size)

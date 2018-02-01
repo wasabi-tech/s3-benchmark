@@ -39,6 +39,8 @@ Below are the command line arguments to the program (which can be displayed usin
         Duration of each test in seconds (default 60)
   -l int
         Number of times to repeat test (default 1)
+  -r string
+        AWS region (default "us-east-1")
   -s string
         Secret key
   -t int
@@ -57,13 +59,19 @@ writes all results to the log file benchmark.log.
 ```
 ubuntu:~/s3-benchmark$ ./s3-benchmark.ubuntu -a MY-ACCESS-KEY -b jeff-s3-benchmark -s MY-SECRET-KEY -t 10 
 Wasabi benchmark program v2.0
-Parameters: url=http://s3.wasabisys.com, bucket=jeff-s3-benchmark, duration=60, threads=10, loops=1, size=1M
+Parameters: url=http://s3.wasabisys.com, bucket=jeff-s3-benchmark, region=us-east-1, duration=60, threads=10, loops=1, size=1M
 Loop 1: PUT time 60.1 secs, objects = 5484, speed = 91.3MB/sec, 91.3 operations/sec.
 Loop 1: GET time 60.1 secs, objects = 5483, speed = 91.3MB/sec, 91.3 operations/sec.
 Loop 1: DELETE time 1.9 secs, 2923.4 deletes/sec.
 Benchmark completed.
 ```
 
-# Note
-Your performance testing benchmark results may vary most often because of limitations of your network connection to the cloud storage provider.  Wasabi performance claims are tested under conditions that remove any latency (which can be shown using the ping command) and bandwidth bottlenecks that restrict how fast data can be moved.  For more information,
-contact Wasabi technical support (support@wasabi.com).
+# Notes
+* If specifying the region ("-r") with AWS, the URL ("-s") should be specified as such:
+```
+s3-benchmark -u https://s3-us-west-2.amazonaws.com -r us-west-2 <other options>
+s3-benchmark -u https://s3-eu-central-1.amazonaws.com -r eu-central-1 <other options>
+```
+
+* Your performance testing benchmark results may vary most often because of limitations of your network connection to the cloud storage provider.  Wasabi performance claims are tested under conditions that remove any latency (which can be shown using the ping command) and bandwidth bottlenecks that restrict how fast data can be moved.  For more information, contact Wasabi technical support (support@wasabi.com).
+

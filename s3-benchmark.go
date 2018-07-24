@@ -38,7 +38,7 @@ var duration_secs, threads, loops int
 var object_size uint64
 var object_data []byte
 var object_data_md5 string
-var running_threads, upload_count, download_count, delete_count int32
+var running_threads, upload_count, download_count, delete_count, upload_slowdown_count, download_slowdown_count, delete_slowdown_count int32
 var endtime, upload_finish, download_finish, delete_finish time.Time
 
 func logit(msg string) {
@@ -212,11 +212,38 @@ func runUpload(thread_num int) {
 		setSignature(req)
 		if resp, err := httpClient.Do(req); err != nil {
 			log.Fatalf("FATAL: Error uploading object %s: %v", prefix, err)
-		} else if resp.StatusCode != http.StatusOK {
-			fmt.Printf("Upload status %s: resp: %+v\n", resp.Status, resp)
-			if resp.Body != nil {
-				body, _ := ioutil.ReadAll(resp.Body)
-				fmt.Printf("Body: %s\n", string(body))
+		} else if resp != nil && resp.StatusCode != http.StatusOK {
+		//} else if resp != nil && resp.StatusCode == http.StatusOK {
+
+			if (resp.StatusCode == http.StatusServiceUnavailable) {
+				//if (resp.StatusCode == http.StatusOK) {
+				//fmt.Println("got upload 503 - fake ", object_data_md5)
+				for {
+					atomic.AddInt32(&upload_slowdown_count, 1)
+					fileobj := bytes.NewReader(object_data)
+					prefix := fmt.Sprintf("%s/%s/Object-%d", url_host, bucket, objnum)
+					req, _ := http.NewRequest("PUT", prefix, fileobj)
+					req.Header.Set("Content-Length", strconv.FormatUint(object_size, 10))
+					req.Header.Set("Content-MD5", object_data_md5)
+					setSignature(req)
+
+					resp, err = httpClient.Do(req)
+					if err != nil {
+						log.Fatalf("FATAL: Error retry of uploading object %s: %v", prefix, err)
+						break
+					}
+					if (resp != nil && resp.StatusCode != http.StatusServiceUnavailable) {
+						// not a slowdown... move on
+						break
+					}
+				}
+			}
+			if (resp != nil && resp.StatusCode != http.StatusOK) {
+				fmt.Printf("Upload status %s: resp: %+v\n", resp.Status, resp)
+				if resp.Body != nil {
+					body, _ := ioutil.ReadAll(resp.Body)
+					fmt.Printf("Body: %s\n", string(body))
+				}
 			}
 		}
 	}
@@ -229,14 +256,30 @@ func runUpload(thread_num int) {
 func runDownload(thread_num int) {
 	for time.Now().Before(endtime) {
 		atomic.AddInt32(&download_count, 1)
-		objnum := rand.Int31n(upload_count) + 1
+		objnum := rand.Int31n(download_count) + 1
 		prefix := fmt.Sprintf("%s/%s/Object-%d", url_host, bucket, objnum)
 		req, _ := http.NewRequest("GET", prefix, nil)
 		setSignature(req)
 		if resp, err := httpClient.Do(req); err != nil {
-			log.Fatalf("FATAL: Error uploading object %s: %v", prefix, err)
+			log.Fatalf("FATAL: Error downloading object %s: %v", prefix, err)
 		} else if resp != nil && resp.Body != nil {
-			io.Copy(ioutil.Discard, resp.Body)
+			if (resp.StatusCode == http.StatusServiceUnavailable){
+				for {
+					atomic.AddInt32(&download_slowdown_count, 1)
+					resp, err = httpClient.Do(req)
+					if  err != nil {
+						log.Fatalf("FATAL: Error retry of downloading object %s: %v", prefix, err)
+						break
+					}
+					if (resp != nil && resp.StatusCode != http.StatusServiceUnavailable){
+						// not a slowdown... move on
+						break
+					}
+				}
+			}
+			if resp != nil && resp.Body != nil {
+				io.Copy(ioutil.Discard, resp.Body)
+			}
 		}
 	}
 	// Remember last done time
@@ -254,8 +297,21 @@ func runDelete(thread_num int) {
 		prefix := fmt.Sprintf("%s/%s/Object-%d", url_host, bucket, objnum)
 		req, _ := http.NewRequest("DELETE", prefix, nil)
 		setSignature(req)
-		if _, err := httpClient.Do(req); err != nil {
+		if resp, err := httpClient.Do(req); err != nil {
 			log.Fatalf("FATAL: Error deleting object %s: %v", prefix, err)
+		} else if (resp != nil && resp.StatusCode == http.StatusServiceUnavailable) {
+			for {
+				atomic.AddInt32(&delete_slowdown_count, 1)
+				resp, err = httpClient.Do(req)
+				if  err != nil {
+					log.Fatalf("FATAL: Error retry of deleting object %s: %v", prefix, err)
+					break
+				}
+				if (resp != nil && resp.StatusCode != http.StatusServiceUnavailable){
+					// not a slowdown, move on...
+					break
+				}
+			}
 		}
 	}
 	// Remember last done time
@@ -368,5 +424,5 @@ func main() {
 	}
 
 	// All done
-	fmt.Println("Benchmark completed.")
+	fmt.Println("Benchmark completed.", "Slowdowns:", " upload:", upload_slowdown_count, " download:", download_slowdown_count, " delete:", delete_slowdown_count)
 }

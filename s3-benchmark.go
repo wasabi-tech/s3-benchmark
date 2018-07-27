@@ -213,32 +213,10 @@ func runUpload(thread_num int) {
 		if resp, err := httpClient.Do(req); err != nil {
 			log.Fatalf("FATAL: Error uploading object %s: %v", prefix, err)
 		} else if resp != nil && resp.StatusCode != http.StatusOK {
-		//} else if resp != nil && resp.StatusCode == http.StatusOK {
-
 			if (resp.StatusCode == http.StatusServiceUnavailable) {
-				//if (resp.StatusCode == http.StatusOK) {
-				//fmt.Println("got upload 503 - fake ", object_data_md5)
-				for {
-					atomic.AddInt32(&upload_slowdown_count, 1)
-					fileobj := bytes.NewReader(object_data)
-					prefix := fmt.Sprintf("%s/%s/Object-%d", url_host, bucket, objnum)
-					req, _ := http.NewRequest("PUT", prefix, fileobj)
-					req.Header.Set("Content-Length", strconv.FormatUint(object_size, 10))
-					req.Header.Set("Content-MD5", object_data_md5)
-					setSignature(req)
-
-					resp, err = httpClient.Do(req)
-					if err != nil {
-						log.Fatalf("FATAL: Error retry of uploading object %s: %v", prefix, err)
-						break
-					}
-					if (resp != nil && resp.StatusCode != http.StatusServiceUnavailable) {
-						// not a slowdown... move on
-						break
-					}
-				}
-			}
-			if (resp != nil && resp.StatusCode != http.StatusOK) {
+				atomic.AddInt32(&upload_slowdown_count, 1)
+				atomic.AddInt32(&upload_count, -1)
+			} else {
 				fmt.Printf("Upload status %s: resp: %+v\n", resp.Status, resp)
 				if resp.Body != nil {
 					body, _ := ioutil.ReadAll(resp.Body)
@@ -264,20 +242,9 @@ func runDownload(thread_num int) {
 			log.Fatalf("FATAL: Error downloading object %s: %v", prefix, err)
 		} else if resp != nil && resp.Body != nil {
 			if (resp.StatusCode == http.StatusServiceUnavailable){
-				for {
-					atomic.AddInt32(&download_slowdown_count, 1)
-					resp, err = httpClient.Do(req)
-					if  err != nil {
-						log.Fatalf("FATAL: Error retry of downloading object %s: %v", prefix, err)
-						break
-					}
-					if (resp != nil && resp.StatusCode != http.StatusServiceUnavailable){
-						// not a slowdown... move on
-						break
-					}
-				}
-			}
-			if resp != nil && resp.Body != nil {
+				atomic.AddInt32(&download_slowdown_count, 1)
+				atomic.AddInt32(&download_count, -1)
+			} else {
 				io.Copy(ioutil.Discard, resp.Body)
 			}
 		}
@@ -300,18 +267,8 @@ func runDelete(thread_num int) {
 		if resp, err := httpClient.Do(req); err != nil {
 			log.Fatalf("FATAL: Error deleting object %s: %v", prefix, err)
 		} else if (resp != nil && resp.StatusCode == http.StatusServiceUnavailable) {
-			for {
-				atomic.AddInt32(&delete_slowdown_count, 1)
-				resp, err = httpClient.Do(req)
-				if  err != nil {
-					log.Fatalf("FATAL: Error retry of deleting object %s: %v", prefix, err)
-					break
-				}
-				if (resp != nil && resp.StatusCode != http.StatusServiceUnavailable){
-					// not a slowdown, move on...
-					break
-				}
-			}
+			atomic.AddInt32(&delete_slowdown_count, 1)
+			atomic.AddInt32(&delete_count, -1)
 		}
 	}
 	// Remember last done time

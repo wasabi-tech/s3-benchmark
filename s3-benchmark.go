@@ -33,7 +33,7 @@ import (
 )
 
 // Global variables
-var access_key, secret_key, url_host, bucket string
+var access_key, secret_key, url_host, bucket, region string
 var duration_secs, threads, loops int
 var object_size uint64
 var object_data []byte
@@ -76,7 +76,7 @@ func getS3Client() *s3.S3 {
 	loglevel := aws.LogOff
 	// Build the rest of the configuration
 	awsConfig := &aws.Config{
-		Region:               aws.String("us-east-1"),
+		Region:               aws.String(region),
 		Endpoint:             aws.String(url_host),
 		Credentials:          creds,
 		LogLevel:             &loglevel,
@@ -94,13 +94,17 @@ func getS3Client() *s3.S3 {
 	return client
 }
 
-func createBucket() {
+func createBucket(ignore_errors bool) {
 	// Get a client
 	client := getS3Client()
 	// Create our bucket (may already exist without error)
 	in := &s3.CreateBucketInput{Bucket: aws.String(bucket)}
 	if _, err := client.CreateBucket(in); err != nil {
-		log.Fatalf("FATAL: Unable to create bucket %s (is your access and secret correct?): %v", bucket, err)
+		if ignore_errors {
+			log.Printf("WARNING: createBucket %s error, ignoring %v", bucket, err)
+		} else {
+			log.Fatalf("FATAL: Unable to create bucket %s (is your access and secret correct?): %v", bucket, err)
+		}
 	}
 }
 
@@ -287,6 +291,7 @@ func main() {
 	myflag.StringVar(&secret_key, "s", "", "Secret key")
 	myflag.StringVar(&url_host, "u", "http://s3.wasabisys.com", "URL for host with method prefix")
 	myflag.StringVar(&bucket, "b", "wasabi-benchmark-bucket", "Bucket for testing")
+	myflag.StringVar(&region, "r", "us-east-1", "Region for testing")
 	myflag.IntVar(&duration_secs, "d", 60, "Duration of each test in seconds")
 	myflag.IntVar(&threads, "t", 1, "Number of threads to run")
 	myflag.IntVar(&loops, "l", 1, "Number of times to repeat test")
@@ -309,8 +314,8 @@ func main() {
 	}
 
 	// Echo the parameters
-	logit(fmt.Sprintf("Parameters: url=%s, bucket=%s, duration=%d, threads=%d, loops=%d, size=%s",
-		url_host, bucket, duration_secs, threads, loops, sizeArg))
+	logit(fmt.Sprintf("Parameters: url=%s, bucket=%s, region=%s, duration=%d, threads=%d, loops=%d, size=%s",
+		url_host, bucket, region, duration_secs, threads, loops, sizeArg))
 
 	// Initialize data for the bucket
 	object_data = make([]byte, object_size)
@@ -320,11 +325,19 @@ func main() {
 	object_data_md5 = base64.StdEncoding.EncodeToString(hasher.Sum(nil))
 
 	// Create the bucket and delete all the objects
-	createBucket()
+	createBucket(true)
 	deleteAllObjects()
 
 	// Loop running the tests
 	for loop := 1; loop <= loops; loop++ {
+
+		// reset counters
+		upload_count = 0
+		upload_slowdown_count = 0
+		download_count = 0
+		download_slowdown_count = 0
+		delete_count = 0
+		delete_slowdown_count = 0
 
 		// Run the upload case
 		running_threads = int32(threads)
@@ -341,8 +354,8 @@ func main() {
 		upload_time := upload_finish.Sub(starttime).Seconds()
 
 		bps := float64(uint64(upload_count)*object_size) / upload_time
-		logit(fmt.Sprintf("Loop %d: PUT time %.1f secs, objects = %d, speed = %sB/sec, %.1f operations/sec.",
-			loop, upload_time, upload_count, bytefmt.ByteSize(uint64(bps)), float64(upload_count)/upload_time))
+		logit(fmt.Sprintf("Loop %d: PUT time %.1f secs, objects = %d, speed = %sB/sec, %.1f operations/sec. Slowdowns = %d",
+			loop, upload_time, upload_count, bytefmt.ByteSize(uint64(bps)), float64(upload_count)/upload_time, upload_slowdown_count))
 
 		// Run the download case
 		running_threads = int32(threads)
@@ -359,8 +372,8 @@ func main() {
 		download_time := download_finish.Sub(starttime).Seconds()
 
 		bps = float64(uint64(download_count)*object_size) / download_time
-		logit(fmt.Sprintf("Loop %d: GET time %.1f secs, objects = %d, speed = %sB/sec, %.1f operations/sec.",
-			loop, download_time, download_count, bytefmt.ByteSize(uint64(bps)), float64(download_count)/download_time))
+		logit(fmt.Sprintf("Loop %d: GET time %.1f secs, objects = %d, speed = %sB/sec, %.1f operations/sec. Slowdowns = %d",
+			loop, download_time, download_count, bytefmt.ByteSize(uint64(bps)), float64(download_count)/download_time, download_slowdown_count))
 
 		// Run the delete case
 		running_threads = int32(threads)
@@ -376,10 +389,9 @@ func main() {
 		}
 		delete_time := delete_finish.Sub(starttime).Seconds()
 
-		logit(fmt.Sprintf("Loop %d: DELETE time %.1f secs, %.1f deletes/sec.",
-			loop, delete_time, float64(upload_count)/delete_time))
+		logit(fmt.Sprintf("Loop %d: DELETE time %.1f secs, %.1f deletes/sec. Slowdowns = %d",
+			loop, delete_time, float64(upload_count)/delete_time, delete_slowdown_count))
 	}
 
 	// All done
-	fmt.Println("Benchmark completed.", "Slowdowns:", " upload:", upload_slowdown_count, " download:", download_slowdown_count, " delete:", delete_slowdown_count)
 }

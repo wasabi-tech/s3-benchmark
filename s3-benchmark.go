@@ -193,7 +193,7 @@ func hmacSHA1(key []byte, content string) []byte {
 
 func setSignature(req *http.Request) {
 	// Setup default parameters
-	dateHdr := time.Now().UTC().Format("20060102T150405Z")
+	dateHdr := time.Now().UTC().Format(time.UnixDate)
 	req.Header.Set("X-Amz-Date", dateHdr)
 	// Get the canonical resource and header
 	canonicalResource := req.URL.EscapedPath()
@@ -217,7 +217,7 @@ func runUpload(thread_num int) {
 		if resp, err := httpClient.Do(req); err != nil {
 			log.Fatalf("FATAL: Error uploading object %s: %v", prefix, err)
 		} else if resp != nil && resp.StatusCode != http.StatusOK {
-			if (resp.StatusCode == http.StatusServiceUnavailable) {
+			if resp.StatusCode == http.StatusServiceUnavailable {
 				atomic.AddInt32(&upload_slowdown_count, 1)
 				atomic.AddInt32(&upload_count, -1)
 			} else {
@@ -245,7 +245,7 @@ func runDownload(thread_num int) {
 		if resp, err := httpClient.Do(req); err != nil {
 			log.Fatalf("FATAL: Error downloading object %s: %v", prefix, err)
 		} else if resp != nil && resp.Body != nil {
-			if (resp.StatusCode == http.StatusServiceUnavailable){
+			if resp.StatusCode == http.StatusServiceUnavailable {
 				atomic.AddInt32(&download_slowdown_count, 1)
 				atomic.AddInt32(&download_count, -1)
 			} else {
@@ -270,7 +270,7 @@ func runDelete(thread_num int) {
 		setSignature(req)
 		if resp, err := httpClient.Do(req); err != nil {
 			log.Fatalf("FATAL: Error deleting object %s: %v", prefix, err)
-		} else if (resp != nil && resp.StatusCode == http.StatusServiceUnavailable) {
+		} else if resp != nil && resp.StatusCode == http.StatusServiceUnavailable {
 			atomic.AddInt32(&delete_slowdown_count, 1)
 			atomic.AddInt32(&delete_count, -1)
 		}

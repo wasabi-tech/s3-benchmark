@@ -16,7 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/pivotal-golang/bytefmt"
+	"code.cloudfoundry.org/bytefmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -34,6 +34,7 @@ import (
 
 // Global variables
 var access_key, secret_key, url_host, bucket, region string
+var clean_bucket bool
 var duration_secs, threads, loops int
 var object_size uint64
 var object_data []byte
@@ -291,6 +292,7 @@ func main() {
 	myflag.StringVar(&secret_key, "s", "", "Secret key")
 	myflag.StringVar(&url_host, "u", "http://s3.wasabisys.com", "URL for host with method prefix")
 	myflag.StringVar(&bucket, "b", "wasabi-benchmark-bucket", "Bucket for testing")
+	myflag.BoolVar(&clean_bucket, "c", false, "clean bucket")
 	myflag.StringVar(&region, "r", "us-east-1", "Region for testing")
 	myflag.IntVar(&duration_secs, "d", 60, "Duration of each test in seconds")
 	myflag.IntVar(&threads, "t", 1, "Number of threads to run")
@@ -326,7 +328,9 @@ func main() {
 
 	// Create the bucket and delete all the objects
 	createBucket(true)
-	deleteAllObjects()
+	if clean_bucket {
+		deleteAllObjects()
+	}
 
 	// Loop running the tests
 	for loop := 1; loop <= loops; loop++ {

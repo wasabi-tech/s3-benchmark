@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/pivotal-golang/bytefmt"
 	"io"
 	"io/ioutil"
@@ -25,7 +26,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
-	"strconv"
+	//"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -206,31 +207,31 @@ func setSignature(req *http.Request) {
 }
 
 func runUpload(thread_num int) {
+	// Get a client
+	client := getS3Client()
+
 	for time.Now().Before(endtime) {
 		objnum := atomic.AddInt32(&upload_count, 1)
 		fileobj := bytes.NewReader(object_data)
-		prefix := fmt.Sprintf("%s/%s/Object-%d", url_host, bucket, objnum)
-		req, _ := http.NewRequest("PUT", prefix, fileobj)
-		req.Header.Set("Content-Length", strconv.FormatUint(object_size, 10))
-		req.Header.Set("Content-MD5", object_data_md5)
-		setSignature(req)
-		if resp, err := httpClient.Do(req); err != nil {
-			log.Fatalf("FATAL: Error uploading object %s: %v", prefix, err)
-		} else if resp != nil && resp.StatusCode != http.StatusOK {
-			if (resp.StatusCode == http.StatusServiceUnavailable) {
-				atomic.AddInt32(&upload_slowdown_count, 1)
-				atomic.AddInt32(&upload_count, -1)
-			} else {
-				fmt.Printf("Upload status %s: resp: %+v\n", resp.Status, resp)
-				if resp.Body != nil {
-					body, _ := ioutil.ReadAll(resp.Body)
-					fmt.Printf("Body: %s\n", string(body))
-				}
-			}
+		key := fmt.Sprintf("Object-%d", objnum)
+		mgr := s3manager.NewUploaderWithClient(client)
+		fmt.Printf("Upload data to %s/%s\n", bucket, key)
+		_, err := mgr.Upload(&s3manager.UploadInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+			Body:   fileobj,
+		})
+		if err != nil {
+			fmt.Printf("Failed to upload data to %s/%s, %s\n", bucket, key, err.Error())
+			atomic.AddInt32(&upload_slowdown_count, 1)
+			atomic.AddInt32(&upload_count, -1)
+			return
 		}
 	}
+
 	// Remember last done time
 	upload_finish = time.Now()
+
 	// One less thread
 	atomic.AddInt32(&running_threads, -1)
 }

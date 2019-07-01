@@ -1,0 +1,6 @@
+github.com/aws/aws-sdk-go v1.20.11 h1:xDc2f/8KmwPW7WkuB0kDUCEP4jpx1PIMMMZkav6cbU4=
+github.com/aws/aws-sdk-go v1.20.11/go.mod h1:KmX6BPdI08NWTb3/sm4ZGu5ShLoqVDhKgpiN924inxo=
+github.com/jmespath/go-jmespath v0.0.0-20180206201540-c2b33e8439af h1:pmfjZENx5imkbgOkpRUYLnmbU7UEFbjtDA2hxJ1ichM=
+github.com/jmespath/go-jmespath v0.0.0-20180206201540-c2b33e8439af/go.mod h1:Nht3zPeWKUH0NzdCt2Blrr5ys8VGpn0CEB0cQHVjt7k=
+github.com/pivotal-golang/bytefmt v0.0.0-20180906201452-2aa6f33b730c h1:qFUFgXdibqZdd8u8Ro86A5qjPz9gW/2lP94S4ebwl+8=
+github.com/pivotal-golang/bytefmt v0.0.0-20180906201452-2aa6f33b730c/go.mod h1:43j3yLP9UiXa0z95/W3hN7yTjoxsQoOll5rrGBgBcnE=

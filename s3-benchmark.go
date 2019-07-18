@@ -238,7 +238,7 @@ func runUpload(thread_num int) {
 func runDownload(thread_num int) {
 	for time.Now().Before(endtime) {
 		atomic.AddInt32(&download_count, 1)
-		objnum := rand.Int31n(download_count) + 1
+		objnum := rand.Int31n(upload_count) + 1
 		prefix := fmt.Sprintf("%s/%s/Object-%d", url_host, bucket, objnum)
 		req, _ := http.NewRequest("GET", prefix, nil)
 		setSignature(req)

@@ -35,11 +35,12 @@ import (
 // Global variables
 var access_key, secret_key, url_host, bucket, region string
 var clean_bucket, put_object bool
-var duration_secs, threads, loops, download_count int
+var duration_secs, threads, loops, num_objs int
 var object_size uint64
 var object_data []byte
 var object_data_md5 string
-var running_threads, upload_count, delete_count, upload_slowdown_count, download_slowdown_count, delete_slowdown_count int32
+var running_threads, upload_count, delete_count, upload_slowdown_count int32
+var download_count, download_slowdown_count, delete_slowdown_count int32
 var endtime, upload_finish, download_finish, delete_finish time.Time
 
 func logit(msg string) {
@@ -244,11 +245,12 @@ func runDownload(thread_num int) {
 	// Get a client
 	client := getS3Client()
 	for time.Now().Before(endtime) {
-		objnum := rand.Intn(download_count) + 1
+		// use num_objs until change to HEAD container
+		objnum := rand.Intn(num_objs) + 1
 		key := fmt.Sprintf("Object-%d", objnum)
 		file, err := os.Create(os.DevNull)
 		mgr := s3manager.NewDownloaderWithClient(client)
-		_, err = mgr.Download(file, &s3.GetObjectInput{
+		size, err := mgr.Download(file, &s3.GetObjectInput{
 			Bucket: aws.String(bucket),
 			Key:    aws.String(key),
 		})
@@ -256,10 +258,10 @@ func runDownload(thread_num int) {
 			fmt.Printf("Failed to download data to %s/%s, %s\n", bucket, key, err.Error())
 			atomic.AddInt32(&download_slowdown_count, 1)
 			return
-		}
-		/* else {
+		} else {
+			atomic.AddInt32(&download_count, 1)
 			fmt.Printf("Downloaded obj %s/%s of length: %d\n", bucket, key, size)
-		}*/
+		}
 	}
 
 	// Remember last done time
@@ -304,7 +306,7 @@ func main() {
 	myflag.IntVar(&duration_secs, "d", 60, "Duration of each test in seconds")
 	myflag.IntVar(&threads, "t", 1, "Number of threads to run")
 	myflag.IntVar(&loops, "l", 1, "Number of times to repeat test")
-	myflag.IntVar(&download_count, "n", 10, "Number of objects to get")
+	myflag.IntVar(&num_objs, "n", 10, "Number of objects to get")
 
 	var sizeArg string
 	myflag.StringVar(&sizeArg, "z", "1M", "Size of objects in bytes with postfix K, M, and G")
@@ -369,7 +371,7 @@ func main() {
 			bps := float64(uint64(upload_count)*object_size) / upload_time
 			logit(fmt.Sprintf("Loop %d: PUT time %.1f secs, objects = %d, speed = %sB/sec, %.1f operations/sec. Slowdowns = %d",
 				loop, upload_time, upload_count, bytefmt.ByteSize(uint64(bps)), float64(upload_count)/upload_time, upload_slowdown_count))
-			download_count = int(upload_count)
+			num_objs = int(upload_count)
 		}
 
 		// Run the download case

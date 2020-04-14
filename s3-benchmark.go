@@ -12,6 +12,8 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"net"
@@ -250,7 +252,7 @@ func runDownload(thread_num int) {
 		key := fmt.Sprintf("Object-%d", objnum)
 		file, err := os.Create(os.DevNull)
 		mgr := s3manager.NewDownloaderWithClient(client)
-		size, err := mgr.Download(file, &s3.GetObjectInput{
+		_, err = mgr.Download(file, &s3.GetObjectInput{
 			Bucket: aws.String(bucket),
 			Key:    aws.String(key),
 		})
@@ -260,13 +262,44 @@ func runDownload(thread_num int) {
 			return
 		} else {
 			atomic.AddInt32(&download_count, 1)
-			fmt.Printf("Downloaded obj %s/%s of length: %d\n", bucket, key, size)
+			fmt.Printf(".")
+			//fmt.Printf("Downloaded obj %s/%s of length: %d\n", bucket, key, size)
 		}
 	}
 
 	// Remember last done time
 	download_finish = time.Now()
 
+	// One less thread
+	atomic.AddInt32(&running_threads, -1)
+}
+
+func runDownload2(thread_num int) {
+	for time.Now().Before(endtime) {
+		atomic.AddInt32(&download_count, 1)
+		objnum := rand.Int31n(download_count) + 1
+		prefix := fmt.Sprintf("%s/%s/Object-%d", url_host, bucket, objnum)
+		req, _ := http.NewRequest("GET", prefix, nil)
+		setSignature(req)
+		if resp, err := httpClient.Do(req); err != nil {
+			log.Fatalf("FATAL: Error downloading object %s: %v", prefix, err)
+		} else if resp != nil && resp.Body != nil {
+			//defer resp.Body.Close()
+			if resp.StatusCode == http.StatusServiceUnavailable {
+				atomic.AddInt32(&download_slowdown_count, 1)
+				atomic.AddInt32(&download_count, -1)
+			} else if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+				atomic.AddInt32(&download_count, -1)
+				fmt.Printf("Failed to download obj %s: : %d\n", prefix, resp.StatusCode)
+			} else {
+				io.Copy(ioutil.Discard, resp.Body)
+				fmt.Printf(".")
+				//fmt.Printf("Finished download obj %s of length: %d\n", prefix, l)
+			}
+		}
+	}
+	// Remember last done time
+	download_finish = time.Now()
 	// One less thread
 	atomic.AddInt32(&running_threads, -1)
 }
@@ -349,6 +382,7 @@ func main() {
 		// reset counters
 		upload_count = 0
 		upload_slowdown_count = 0
+		download_count = 0
 		download_slowdown_count = 0
 		delete_count = 0
 		delete_slowdown_count = 0
@@ -389,7 +423,7 @@ func main() {
 		download_time := download_finish.Sub(get_starttime).Seconds()
 
 		get_bps := float64(uint64(download_count)*object_size) / download_time
-		logit(fmt.Sprintf("Loop %d: GET time %.1f secs, objects = %d, speed = %sB/sec, %.1f operations/sec. Slowdowns = %d",
+		logit(fmt.Sprintf("\nLoop %d: GET time %.1f secs, objects = %d, speed = %sB/sec, %.1f operations/sec. Slowdowns = %d",
 			loop, download_time, download_count, bytefmt.ByteSize(uint64(get_bps)), float64(download_count)/download_time, download_slowdown_count))
 
 		// Run the delete case

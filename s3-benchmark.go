@@ -25,13 +25,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	"code.cloudfoundry.org/bytefmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/pivotal-golang/bytefmt"
 )
 
 // Global variables
@@ -198,7 +198,7 @@ func hmacSHA1(key []byte, content string) []byte {
 
 func setSignature(req *http.Request) {
 	// Setup default parameters
-	dateHdr := time.Now().UTC().Format("20060102T150405Z")
+	dateHdr := time.Now().UTC().Format(time.RFC1123)
 	req.Header.Set("X-Amz-Date", dateHdr)
 	// Get the canonical resource and header
 	canonicalResource := req.URL.EscapedPath()
@@ -277,14 +277,14 @@ func runDownload(thread_num int) {
 func runDownload2(thread_num int) {
 	for time.Now().Before(endtime) {
 		atomic.AddInt32(&download_count, 1)
-		objnum := rand.Int31n(download_count) + 1
+		objnum := rand.Intn(num_objs) + 1
 		prefix := fmt.Sprintf("%s/%s/Object-%d", url_host, bucket, objnum)
 		req, _ := http.NewRequest("GET", prefix, nil)
 		setSignature(req)
 		if resp, err := httpClient.Do(req); err != nil {
 			log.Fatalf("FATAL: Error downloading object %s: %v", prefix, err)
 		} else if resp != nil && resp.Body != nil {
-			//defer resp.Body.Close()
+			defer resp.Body.Close()
 			if resp.StatusCode == http.StatusServiceUnavailable {
 				atomic.AddInt32(&download_slowdown_count, 1)
 				atomic.AddInt32(&download_count, -1)
@@ -413,7 +413,7 @@ func main() {
 		get_starttime := time.Now()
 		endtime = get_starttime.Add(time.Second * time.Duration(duration_secs))
 		for n := 1; n <= threads; n++ {
-			go runDownload(n)
+			go runDownload2(n)
 		}
 
 		// Wait for it to finish

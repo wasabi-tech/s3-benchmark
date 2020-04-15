@@ -6,7 +6,6 @@ package main
 import (
 	"bytes"
 	"crypto/hmac"
-	"crypto/md5"
 	"crypto/sha1"
 	"crypto/tls"
 	"encoding/base64"
@@ -40,7 +39,6 @@ var clean_bucket, put_object bool
 var duration_secs, threads, loops, num_objs int
 var object_size uint64
 var object_data []byte
-var object_data_md5 string
 var running_threads, upload_count, delete_count, upload_slowdown_count int32
 var download_count, download_slowdown_count, delete_slowdown_count int32
 var endtime, upload_finish, download_finish, delete_finish time.Time
@@ -216,6 +214,9 @@ func runUpload(thread_num int) {
 
 	for time.Now().Before(endtime) {
 		objnum := atomic.AddInt32(&upload_count, 1)
+		// Initialize data for the object
+		object_data = make([]byte, object_size)
+		rand.Read(object_data)
 		fileobj := bytes.NewReader(object_data)
 		key := fmt.Sprintf("Object-%d", objnum)
 		mgr := s3manager.NewUploaderWithClient(client)
@@ -366,9 +367,6 @@ func main() {
 	// Initialize data for the bucket
 	object_data = make([]byte, object_size)
 	rand.Read(object_data)
-	hasher := md5.New()
-	hasher.Write(object_data)
-	object_data_md5 = base64.StdEncoding.EncodeToString(hasher.Sum(nil))
 
 	// Create the bucket and delete all the objects
 	createBucket(true)

@@ -6,7 +6,6 @@ package main
 import (
 	"bytes"
 	"crypto/hmac"
-	"crypto/md5"
 	"crypto/sha1"
 	"crypto/tls"
 	"encoding/base64"
@@ -25,23 +24,23 @@ import (
 	"sync/atomic"
 	"time"
 
+	"code.cloudfoundry.org/bytefmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/pivotal-golang/bytefmt"
 )
 
 // Global variables
 var access_key, secret_key, url_host, bucket, region string
-var clean_bucket bool
-var duration_secs, threads, loops int
+var clean_bucket, put_object bool
+var duration_secs, threads, loops, num_objs int
 var object_size uint64
 var object_data []byte
-var object_data_md5 string
-var running_threads, upload_count, download_count, delete_count, upload_slowdown_count, download_slowdown_count, delete_slowdown_count int32
+var running_threads, upload_count, delete_count, upload_slowdown_count int32
+var download_count, download_slowdown_count, delete_slowdown_count int32
 var endtime, upload_finish, download_finish, delete_finish time.Time
 
 func logit(msg string) {
@@ -197,7 +196,7 @@ func hmacSHA1(key []byte, content string) []byte {
 
 func setSignature(req *http.Request) {
 	// Setup default parameters
-	dateHdr := time.Now().UTC().Format("20060102T150405Z")
+	dateHdr := time.Now().UTC().Format(time.RFC1123)
 	req.Header.Set("X-Amz-Date", dateHdr)
 	// Get the canonical resource and header
 	canonicalResource := req.URL.EscapedPath()
@@ -215,14 +214,20 @@ func runUpload(thread_num int) {
 
 	for time.Now().Before(endtime) {
 		objnum := atomic.AddInt32(&upload_count, 1)
+		// Initialize data for the object
+		object_data = make([]byte, object_size)
+		rand.Read(object_data)
 		fileobj := bytes.NewReader(object_data)
 		key := fmt.Sprintf("Object-%d", objnum)
 		mgr := s3manager.NewUploaderWithClient(client)
 		fmt.Printf("%d: Upload data to %s/%s\n", thread_num, bucket, key)
-		_, err := mgr.Upload(&s3manager.UploadInput{
+		upParams := &s3manager.UploadInput{
 			Bucket: aws.String(bucket),
 			Key:    aws.String(key),
 			Body:   fileobj,
+		}
+		_, err := mgr.Upload(upParams, func(u *s3manager.Uploader) {
+			u.PartSize = 200 * 1024 * 1024 // 200MB part size
 		})
 		if err != nil {
 			fmt.Printf("Failed to upload data to %s/%s, %s\n", bucket, key, err.Error())
@@ -240,20 +245,57 @@ func runUpload(thread_num int) {
 }
 
 func runDownload(thread_num int) {
+	// Get a client
+	client := getS3Client()
+	for time.Now().Before(endtime) {
+		// use num_objs until change to HEAD container
+		objnum := rand.Intn(num_objs) + 1
+		key := fmt.Sprintf("Object-%d", objnum)
+		file, err := os.Create(os.DevNull)
+		mgr := s3manager.NewDownloaderWithClient(client)
+		_, err = mgr.Download(file, &s3.GetObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+		})
+		if err != nil {
+			fmt.Printf("Failed to download data to %s/%s, %s\n", bucket, key, err.Error())
+			atomic.AddInt32(&download_slowdown_count, 1)
+			return
+		} else {
+			atomic.AddInt32(&download_count, 1)
+			fmt.Printf(".")
+			//fmt.Printf("Downloaded obj %s/%s of length: %d\n", bucket, key, size)
+		}
+	}
+
+	// Remember last done time
+	download_finish = time.Now()
+
+	// One less thread
+	atomic.AddInt32(&running_threads, -1)
+}
+
+func runDownload2(thread_num int) {
 	for time.Now().Before(endtime) {
 		atomic.AddInt32(&download_count, 1)
-		objnum := rand.Int31n(download_count) + 1
+		objnum := rand.Intn(num_objs) + 1
 		prefix := fmt.Sprintf("%s/%s/Object-%d", url_host, bucket, objnum)
 		req, _ := http.NewRequest("GET", prefix, nil)
 		setSignature(req)
 		if resp, err := httpClient.Do(req); err != nil {
 			log.Fatalf("FATAL: Error downloading object %s: %v", prefix, err)
 		} else if resp != nil && resp.Body != nil {
+			defer resp.Body.Close()
 			if resp.StatusCode == http.StatusServiceUnavailable {
 				atomic.AddInt32(&download_slowdown_count, 1)
 				atomic.AddInt32(&download_count, -1)
+			} else if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+				atomic.AddInt32(&download_count, -1)
+				fmt.Printf("Failed to download obj %s: : %d\n", prefix, resp.StatusCode)
 			} else {
 				io.Copy(ioutil.Discard, resp.Body)
+				fmt.Printf(".")
+				//fmt.Printf("Finished download obj %s of length: %d\n", prefix, l)
 			}
 		}
 	}
@@ -293,10 +335,13 @@ func main() {
 	myflag.StringVar(&url_host, "u", "http://s3.wasabisys.com", "URL for host with method prefix")
 	myflag.StringVar(&bucket, "b", "s3-benchmark-bucket", "Bucket for testing")
 	myflag.BoolVar(&clean_bucket, "c", false, "clean bucket")
+	myflag.BoolVar(&put_object, "p", false, "PUT objects")
 	myflag.StringVar(&region, "r", "us-east-1", "Region for testing")
 	myflag.IntVar(&duration_secs, "d", 60, "Duration of each test in seconds")
 	myflag.IntVar(&threads, "t", 1, "Number of threads to run")
 	myflag.IntVar(&loops, "l", 1, "Number of times to repeat test")
+	myflag.IntVar(&num_objs, "n", 10, "Number of objects to get")
+
 	var sizeArg string
 	myflag.StringVar(&sizeArg, "z", "1M", "Size of objects in bytes with postfix K, M, and G")
 	if err := myflag.Parse(os.Args[1:]); err != nil {
@@ -322,9 +367,6 @@ func main() {
 	// Initialize data for the bucket
 	object_data = make([]byte, object_size)
 	rand.Read(object_data)
-	hasher := md5.New()
-	hasher.Write(object_data)
-	object_data_md5 = base64.StdEncoding.EncodeToString(hasher.Sum(nil))
 
 	// Create the bucket and delete all the objects
 	createBucket(true)
@@ -344,43 +386,46 @@ func main() {
 		delete_slowdown_count = 0
 
 		// Run the upload case
-		running_threads = int32(threads)
-		starttime := time.Now()
-		endtime = starttime.Add(time.Second * time.Duration(duration_secs))
-		for n := 1; n <= threads; n++ {
-			go runUpload(n)
-		}
-
-		// Wait for it to finish
-		for atomic.LoadInt32(&running_threads) > 0 {
-			time.Sleep(time.Millisecond)
-		}
-		upload_time := upload_finish.Sub(starttime).Seconds()
-
-		bps := float64(uint64(upload_count)*object_size) / upload_time
-		logit(fmt.Sprintf("Loop %d: PUT time %.1f secs, objects = %d, speed = %sB/sec, %.1f operations/sec. Slowdowns = %d",
-			loop, upload_time, upload_count, bytefmt.ByteSize(uint64(bps)), float64(upload_count)/upload_time, upload_slowdown_count))
-
-		// Run the download case
-		/*
+		if put_object {
 			running_threads = int32(threads)
-			starttime = time.Now()
+			starttime := time.Now()
 			endtime = starttime.Add(time.Second * time.Duration(duration_secs))
 			for n := 1; n <= threads; n++ {
-				go runDownload(n)
+				go runUpload(n)
 			}
 
 			// Wait for it to finish
 			for atomic.LoadInt32(&running_threads) > 0 {
 				time.Sleep(time.Millisecond)
 			}
-			download_time := download_finish.Sub(starttime).Seconds()
+			upload_time := upload_finish.Sub(starttime).Seconds()
 
-			bps = float64(uint64(download_count)*object_size) / download_time
-			logit(fmt.Sprintf("Loop %d: GET time %.1f secs, objects = %d, speed = %sB/sec, %.1f operations/sec. Slowdowns = %d",
-				loop, download_time, download_count, bytefmt.ByteSize(uint64(bps)), float64(download_count)/download_time, download_slowdown_count))
+			bps := float64(uint64(upload_count)*object_size) / upload_time
+			logit(fmt.Sprintf("Loop %d: PUT time %.1f secs, objects = %d, speed = %sB/sec, %.1f operations/sec. Slowdowns = %d",
+				loop, upload_time, upload_count, bytefmt.ByteSize(uint64(bps)), float64(upload_count)/upload_time, upload_slowdown_count))
+			num_objs = int(upload_count)
+		}
 
-			// Run the delete case
+		// Run the download case
+		running_threads = int32(threads)
+		get_starttime := time.Now()
+		endtime = get_starttime.Add(time.Second * time.Duration(duration_secs))
+		for n := 1; n <= threads; n++ {
+			go runDownload2(n)
+		}
+
+		// Wait for it to finish
+		for atomic.LoadInt32(&running_threads) > 0 {
+			time.Sleep(time.Millisecond)
+		}
+		download_time := download_finish.Sub(get_starttime).Seconds()
+
+		get_bps := float64(uint64(download_count)*object_size) / download_time
+		logit(fmt.Sprintf("\nLoop %d: GET time %.1f secs, objects = %d, speed = %sB/sec, %.1f operations/sec. Slowdowns = %d",
+			loop, download_time, download_count, bytefmt.ByteSize(uint64(get_bps)), float64(download_count)/download_time, download_slowdown_count))
+
+		// Run the delete case
+		/*
 			running_threads = int32(threads)
 			starttime = time.Now()
 			endtime = starttime.Add(time.Second * time.Duration(duration_secs))

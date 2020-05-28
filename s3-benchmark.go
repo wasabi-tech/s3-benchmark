@@ -39,7 +39,7 @@ var clean_bucket, put_object bool
 var duration_secs, threads, loops, num_objs int
 var object_size uint64
 var running_threads, upload_count, delete_count, upload_slowdown_count int32
-var download_count, download_slowdown_count, delete_slowdown_count int32
+var download_count, obj_idx, download_slowdown_count, delete_slowdown_count int32
 var endtime, upload_finish, download_finish, delete_finish time.Time
 
 func logit(msg string) {
@@ -282,8 +282,10 @@ func runDownload(thread_num int) {
 func runDownload2(thread_num int) {
 	for time.Now().Before(endtime) {
 		atomic.AddInt32(&download_count, 1)
-		objnum := rand.Intn(num_objs) + 1
-		prefix := fmt.Sprintf("%s/%s/Object-%d", url_host, bucket, objnum)
+		atomic.CompareAndSwapInt32(&obj_idx, int32(num_objs), 0)
+		atomic.AddInt32(&obj_idx, 1)
+		//objnum := rand.Intn(num_objs) + 1
+		prefix := fmt.Sprintf("%s/%s/Object-%d", url_host, bucket, obj_idx)
 		req, _ := http.NewRequest("GET", prefix, nil)
 		setSignature(req)
 		if resp, err := httpClient.Do(req); err != nil {
@@ -381,6 +383,7 @@ func main() {
 		upload_count = 0
 		upload_slowdown_count = 0
 		download_count = 0
+		obj_idx = 0
 		download_slowdown_count = 0
 		delete_count = 0
 		delete_slowdown_count = 0

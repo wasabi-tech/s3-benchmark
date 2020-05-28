@@ -38,7 +38,6 @@ var access_key, secret_key, url_host, bucket, region string
 var clean_bucket, put_object bool
 var duration_secs, threads, loops, num_objs int
 var object_size uint64
-var object_data []byte
 var running_threads, upload_count, delete_count, upload_slowdown_count int32
 var download_count, download_slowdown_count, delete_slowdown_count int32
 var endtime, upload_finish, download_finish, delete_finish time.Time
@@ -215,12 +214,11 @@ func runUpload(thread_num int) {
 	for time.Now().Before(endtime) {
 		objnum := atomic.AddInt32(&upload_count, 1)
 		// Initialize data for the object
-		object_data = make([]byte, object_size)
+		object_data := make([]byte, object_size)
 		rand.Read(object_data)
 		fileobj := bytes.NewReader(object_data)
 		key := fmt.Sprintf("Object-%d", objnum)
 		mgr := s3manager.NewUploaderWithClient(client)
-		fmt.Printf("%d: Upload data to %s/%s\n", thread_num, bucket, key)
 		upParams := &s3manager.UploadInput{
 			Bucket: aws.String(bucket),
 			Key:    aws.String(key),
@@ -229,11 +227,17 @@ func runUpload(thread_num int) {
 		_, err := mgr.Upload(upParams, func(u *s3manager.Uploader) {
 			u.PartSize = 200 * 1024 * 1024 // 200MB part size
 		})
+		object_data = nil
+		fileobj = nil
+		mgr = nil
+		upParams = nil
 		if err != nil {
 			fmt.Printf("Failed to upload data to %s/%s, %s\n", bucket, key, err.Error())
 			atomic.AddInt32(&upload_slowdown_count, 1)
 			atomic.AddInt32(&upload_count, -1)
 			return
+		} else {
+			fmt.Printf("%d: Uploaded data to %s/%s\n", thread_num, bucket, key)
 		}
 	}
 
@@ -363,10 +367,6 @@ func main() {
 	// Echo the parameters
 	logit(fmt.Sprintf("Parameters: url=%s, bucket=%s, region=%s, duration=%d, threads=%d, loops=%d, size=%s",
 		url_host, bucket, region, duration_secs, threads, loops, sizeArg))
-
-	// Initialize data for the bucket
-	object_data = make([]byte, object_size)
-	rand.Read(object_data)
 
 	// Create the bucket and delete all the objects
 	createBucket(true)

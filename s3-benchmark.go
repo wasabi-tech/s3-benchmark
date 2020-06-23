@@ -36,7 +36,7 @@ import (
 // Global variables
 var access_key, secret_key, url_host, bucket, region string
 var clean_bucket, put_object bool
-var duration_secs, threads, loops, num_objs int
+var duration_secs, threads, loops, num_objs, start_idx int
 var object_size uint64
 var running_threads, upload_count, delete_count, upload_slowdown_count int32
 var download_count, obj_idx, download_slowdown_count, delete_slowdown_count int32
@@ -347,6 +347,7 @@ func main() {
 	myflag.IntVar(&threads, "t", 1, "Number of threads to run")
 	myflag.IntVar(&loops, "l", 1, "Number of times to repeat test")
 	myflag.IntVar(&num_objs, "n", 10, "Number of objects to get")
+	myflag.IntVar(&start_idx, "i", 0, "Starting index")
 
 	var sizeArg string
 	myflag.StringVar(&sizeArg, "z", "1M", "Size of objects in bytes with postfix K, M, and G")
@@ -380,7 +381,7 @@ func main() {
 	for loop := 1; loop <= loops; loop++ {
 
 		// reset counters
-		upload_count = 0
+		upload_count = int32(start_idx)
 		upload_slowdown_count = 0
 		download_count = 0
 		obj_idx = 0
